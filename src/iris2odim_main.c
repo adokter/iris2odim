@@ -41,6 +41,8 @@ along with RAVE.  If not, see <http://www.gnu.org/licenses/>.
 #include "polarvolume.h"
 #include "iris2odim.h"
 #include "iris2list_interface.h"
+#include "hlhdf.h"
+#include "rave_debug.h"
 
 /**
  * Command-line iris2odim
@@ -50,6 +52,11 @@ int main(int argc,char *argv[]) {
    int i;
    const char *ifile = NULL;
    const char *ofile = NULL;
+
+   HL_init();
+   Rave_initializeDebugger();
+   Rave_setDebugLevel(RAVE_WARNING);
+
    RaveIO_t* raveio = RAVE_OBJECT_NEW(&RaveIO_TYPE);
    RaveCoreObject* object = NULL;
    int rot = Rave_ObjectType_UNDEFINED;
