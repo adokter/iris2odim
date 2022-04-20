@@ -2808,7 +2808,7 @@ mtv_s *ymd_to_mtv( ymd_s *ymd_p ) {
        */
 //      sometime->tm_isdst = -1;
        sometime->tm_isdst = 0;
-   seconds = mktime( sometime );
+   seconds = timegm( sometime );
    if( seconds == -1) {
       fprintf(stderr,"Function mktime failed in function ymd_to_mtv.\n");
       fprintf(stderr,
@@ -2968,7 +2968,7 @@ ymd_s *mtv_to_ymd( mtv_s *mtv_p ) {
    }
    /* set a pointer to the input number of seconds */
    time_t *my_timet_p = &(mtv_p->tv_sec);
-   my_tm_p = localtime_r(my_timet_p, my_tm_p);
+   my_tm_p = gmtime_r(my_timet_p, my_tm_p);
    if(my_tm_p == NULL ) return NULL;
    ymd_s *ymd_p;
    ymd_p = RAVE_MALLOC(sizeof *ymd_p);
@@ -3042,7 +3042,7 @@ ymd_s *mtv_to_ymd( mtv_s *mtv_p ) {
    ymd_p->day  =(UINT2) my_dy;
    ymd_p->seconds_since_midnight = (UINT4)
       (my_hour*3600L + my_min*60L + my_sec);
-   ymd_p->milliseconds_and_UTC_DST_indication = (UINT2) my_milli;
+   ymd_p->milliseconds_and_UTC_DST_indication = (UINT2) my_milli ;
    /* Note we did not set the DST related flags here */
    if(my_tm_p != NULL) {
       RAVE_FREE(my_tm_p);
