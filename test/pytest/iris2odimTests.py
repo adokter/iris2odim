@@ -38,10 +38,7 @@ _rave.setDebugLevel(_rave.Debug_RAVE_WARNING) #turns off rave_hlhdf_utilities IN
 #  objects can't pass tests to methods, but they can be passed to functions.
 
 # Not needed because RAVE assigns these automagically, or they are just not relevant
-IGNORE = [
-    'what/version',
-    'what/object',
-    ]
+IGNORE = ['what/version', 'what/object']
 
 def validateAttributes(utest, obj, ref_obj):
     for aname in ref_obj.getAttributeNames():
@@ -49,20 +46,19 @@ def validateAttributes(utest, obj, ref_obj):
             attr = obj.getAttribute(aname)
             ref_attr = ref_obj.getAttribute(aname)
             if isinstance(ref_attr, np.ndarray):  # Arrays get special treatment
-                utest.assertTrue(np.array_equal(attr, ref_attr))
-#                try: #nicer failure reporting
-#                    np.testing.assert_allclose(attr, ref_attr, rtol=1e-5, atol=0) #for no remake of ref files (numpy v1.16)
-#                except:
-#                    print('AssertionError: aname : '+aname)
+               try: #nicer failure reporting
+                   np.testing.assert_allclose(attr, ref_attr, rtol=1e-5, atol=0) #for no remake of ref files (numpy v1.16)
+               except:
+                   print('AssertionError: aname : '+aname)
+                   raise
             else:
                 try:
                     utest.assertEqual(attr, ref_attr)
-                except AssertionError as e:
+                except:
                     print('AssertionError: aname : '+aname)
                     print('ref_attr : ', ref_attr)
                     print('    attr : ',     attr)
-#                    import pdb; pdb.set_trace()
-#                    utest.fail(str(e))
+                    raise
 
 def validateTopLevel(utest, obj, ref_obj):
     utest.assertEqual(obj.source, ref_obj.source)
