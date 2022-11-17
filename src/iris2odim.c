@@ -23,10 +23,90 @@ along with RAVE.  If not, see <http://www.gnu.org/licenses/>.
  * @author Daniel Michelson and Mark Couture, Environment Canada
  * @date 2015-10-16
  */
+#define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE  // To get timegm on linux
+#define _DARWIN_C_SOURCE // To get timegm on mac
+#include <ctype.h>
+#include <stdio.h>
+#include <math.h>       // M_PI
+#include <stddef.h> // size_t, NULL
+#include <stdlib.h> // malloc, calloc, exit, free
+#include <stdarg.h>
+#include <string.h>
+#include <time.h>       // localtime_r
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "iris2odim.h"
 #include "iris2list_listobj.h"
 #include "iris2list_interface.h"
-#include "dlist.h"
+#include "irisdlist.h"
+#include "rave_alloc.h"
+
+/**
+ * print function used by Iris_printf
+ */
+static iris_printfun iris_internal_printf_fun = Iris_default_printf;
+
+/**
+ * Default printf function.
+ */
+void Iris_default_printf(const char* msg)
+{
+#ifndef IRIS_NO_EXIT_OR_STDERR
+  fprintf(stderr, "%s", msg);
+#endif
+}
+
+/**
+ * Wraps exit into it's own function to be able to disable hard exit when used in app.
+ * Will either return code or do a hard exit depending on if -DIRIS_NO_EXIT_OR_STDERR has
+ * been defind or not.
+ * @param[in] return_code - the return value for this function if IRIS_NO_EXIT_OR_STDERR has been defined.
+ * @param[in] exit_code - the exit code used to call exit if IRIS_NO_EXIT_OR_STDERR hasn't been defined.
+ * Output:
+ * @return the return_code
+ */
+int Iris_exit_function(int return_code, int exit_code)
+{
+#ifdef IRIS_NO_EXIT_OR_STDERR
+    return return_code;
+#else
+    exit(exit_code);
+    return return_code;
+#endif
+}
+
+/**
+ * Wraps fprintf into it's own function to be able to disable printouts depending on if DIRIS_NO_EXIT_OR_STDERR has been set or not
+ * @param[in] fmt - a string containing the output format
+ * @param[in] ... - variable argument list
+ */
+void Iris_printf(const char* fmt, ...)
+{
+  va_list alist;
+  va_start(alist,fmt);
+  char msgbuff[4096];
+  int n = vsnprintf(msgbuff, 4096, fmt, alist);
+  va_end(alist);
+  if (n < 0 || n >= 1024) {
+    return;
+  }
+  iris_internal_printf_fun(msgbuff);
+}
+
+/**
+ * Sets the print function to where printouts should be done. Default behaviour is to use
+ * Iris_default_printf.
+ * @param[in] fun - the default printer
+ */
+void Iris_set_printf(iris_printfun fun)
+{
+  if (fun != NULL) {
+    iris_internal_printf_fun = fun;
+  }
+}
+
 /**
  * Function name: populateParam
  * Intent: A function to transfer info to RAVE objects for eventual output
@@ -68,8 +148,8 @@ int populateParam(PolarScanParam_t* param,
    double*    arr2d_double_data = NULL;
    int ray_index = -1;
    ray_s *this_ray_structure = NULL;
-   DList *ray_list = NULL;
-   DListElmt *this_ray_element = NULL;
+   IrisDList_t *ray_list = NULL;
+   IrisDListElement_t *this_ray_element = NULL;
    RaveDataType type = RaveDataType_UNDEFINED;
    double angular_resolution_degrees = (double) 
       file_element_p->ingest_header_p->tcf.scan.angular_resolution_x1000 /
@@ -103,9 +183,9 @@ int populateParam(PolarScanParam_t* param,
       ra_p = *ra_pp;
       if( ra_p == NULL) {
          /* Tell client that the allocation failed */
-         fprintf( stderr, "Error allocating ray attributes structure.\n");
+         Iris_printf("Error allocating ray attributes structure.\n");
          free_IRIS(&file_element_p);
-         exit(EXIT_FAILURE);
+         return Iris_exit_function(-1, EXIT_FAILURE);
       }
       else {
          ra_p->startazA = NULL;
@@ -118,37 +198,37 @@ int populateParam(PolarScanParam_t* param,
       ra_p->startazA = RAVE_MALLOC(sizeof(double)*max_nrays);
       if( ra_p->startazA == NULL) {
          /* Tell client that the allocation failed */
-         fprintf( stderr, "Error allocating ray attributes array ra_p->startazA.\n");
+         Iris_printf("Error allocating ray attributes array ra_p->startazA.\n");
          free_IRIS(&file_element_p);
-         exit(EXIT_FAILURE);
+         return Iris_exit_function(-1, EXIT_FAILURE);
       }
       ra_p->stopazA = RAVE_MALLOC(sizeof(double)*max_nrays);
       if( ra_p->stopazA == NULL) {
          /* Tell client that the allocation failed */
-         fprintf( stderr, "Error allocating ray attributes array ra_p->stopazA.\n");
+         Iris_printf("Error allocating ray attributes array ra_p->stopazA.\n");
          free_IRIS(&file_element_p);
-         exit(EXIT_FAILURE);
+         return Iris_exit_function(-1, EXIT_FAILURE);
       }
       ra_p->startazT = RAVE_MALLOC(sizeof(double)*max_nrays);
       if( ra_p->startazT == NULL) {
          /* Tell client that the allocation failed */
-         fprintf( stderr, "Error allocating ray attributes array ra_p->startazT.\n");
+         Iris_printf("Error allocating ray attributes array ra_p->startazT.\n");
          free_IRIS(&file_element_p);
-         exit(EXIT_FAILURE);
+         return Iris_exit_function(-1, EXIT_FAILURE);
       }
       ra_p->stopazT = RAVE_MALLOC(sizeof(double)*max_nrays);
       if( ra_p->stopazT == NULL) {
          /* Tell client that the allocation failed */
-         fprintf( stderr, "Error allocating ray attributes array ra_p->stopazT.\n");
+         Iris_printf("Error allocating ray attributes array ra_p->stopazT.\n");
          free_IRIS(&file_element_p);
-         exit(EXIT_FAILURE);
+         return Iris_exit_function(-1, EXIT_FAILURE);
       }
       ra_p->elangles = RAVE_MALLOC(sizeof(double)*max_nrays);
       if( ra_p->elangles == NULL) {
          /* Tell client that the allocation failed */
-         fprintf( stderr, "Error allocating ray attributes array ra_p->elangles.\n");
+         Iris_printf("Error allocating ray attributes array ra_p->elangles.\n");
          free_IRIS(&file_element_p);
-         exit(EXIT_FAILURE);
+         return Iris_exit_function(-1, EXIT_FAILURE);
       }
       /*
        * set the (un)fill value to MY_FILL_DOUBLE for the angle arrays 
@@ -435,10 +515,10 @@ int populateParam(PolarScanParam_t* param,
        */
       for(int irow=0; irow < nrays; irow++ ) {
          if(irow==0) {
-            this_ray_element = dlist_head(ray_list);
+            this_ray_element = IrisDList_head(ray_list);
          }
          else {
-            this_ray_element = dlist_next(this_ray_element);
+            this_ray_element = IrisDListElement_next(this_ray_element);
          }
          this_ray_structure = (ray_s *) this_ray_element->data;
          nbins = (int) this_ray_structure->ray_head.actual_number_of_bins_in_ray;
@@ -897,11 +977,11 @@ int populateScan(PolarScan_t* scan,
    UINT4 sfm = 0;
    int ret = 0;
    int ncopied = 0;
-   DList *sweep_list = NULL;
-   DListElmt *a_sweep_element = NULL;
+   IrisDList_t *sweep_list = NULL;
+   IrisDListElement_t *a_sweep_element = NULL;
    sweep_element_s *sweep_data = NULL;
-   DList *types_list = NULL;
-   DListElmt *this_type_element = NULL;
+   IrisDList_t *types_list = NULL;
+   IrisDListElement_t *this_type_element = NULL;
    datatype_element_s* this_type = NULL;
    idh_s *idh_p = NULL;
    mtv_s my_mtv;
@@ -926,16 +1006,16 @@ int populateScan(PolarScan_t* scan,
    for (int jj=0; jj <= sweep_index; jj++) {
       /* set a pointer to point to the current scan/sweep */
       if(jj==0) {
-         a_sweep_element = dlist_head(sweep_list);
+         a_sweep_element = IrisDList_head(sweep_list);
       }
       else {
-         a_sweep_element = dlist_next(a_sweep_element);
+         a_sweep_element = IrisDListElement_next(a_sweep_element);
       }
    }
    sweep_data = (sweep_element_s *) a_sweep_element->data;
    /* here 'types' refers to moments or scanned-parameters */ 
    types_list = sweep_data->types_list_p;
-   np = dlist_size(types_list);
+   np = IrisDList_size(types_list);
    /* set pointer to the first node in the parameter list */	  
    this_type_element = types_list->head;
    /* set pointer to the data in this list node */
@@ -986,8 +1066,8 @@ int populateScan(PolarScan_t* scan,
                             sweep_start_ymd_p->month, 
                             sweep_start_ymd_p->day);
          if(ncopied <= 1) {
-            fprintf(stderr,"Error when formatting volume start date.\n");
-            fprintf(stderr,"Will attempt to continue.\n");
+            Iris_printf("Error when formatting volume start date.\n");
+            Iris_printf("Will attempt to continue.\n");
          }
          sfm = sweep_start_ymd_p->seconds_since_midnight;
          RAVE_FREE(sweep_start_ymd_p);
@@ -1000,8 +1080,8 @@ int populateScan(PolarScan_t* scan,
    seconds = sfm - hours*3600 - minutes*60;
    ncopied = snprintf(stime,7,"%2.2i%2.2i%2.2i", hours,minutes,seconds);
    if(ncopied <= 1) {
-      fprintf(stderr,"Error when formatting volume start time.\n");
-      fprintf(stderr,"Will attempt to continue.\n");
+      Iris_printf("Error when formatting volume start time.\n");
+      Iris_printf("Will attempt to continue.\n");
    }
    /*
     * Note! The following version of sweep start time is the fractional
@@ -1027,9 +1107,9 @@ int populateScan(PolarScan_t* scan,
          }
       }
       else {
-         fprintf(stderr,"Error obtaining volume stop time.\n");
-         fprintf(stderr,"Could be a result of an allocation failure.\n");
-         fprintf(stderr,"Will attempt to continue.\n");
+         Iris_printf("Error obtaining volume stop time.\n");
+         Iris_printf("Could be a result of an allocation failure.\n");
+         Iris_printf("Will attempt to continue.\n");
       }
    }
    else {
@@ -1049,6 +1129,8 @@ int populateScan(PolarScan_t* scan,
    my_mtv_p->tv_sec = (time_t) floor(sweep_stop_time);
    my_mtv_p->tv_usec = 
         (sweep_stop_time - (double) floor(sweep_stop_time))*1.0E06;
+   my_mtv_p->isdst = 0; /* AHE: Better than unitialized but is it correct? */
+
    sweep_end_ymd_p = mtv_to_ymd(my_mtv_p);
    char edate[9];
    sfm = 0;
@@ -1056,8 +1138,8 @@ int populateScan(PolarScan_t* scan,
       ncopied = snprintf(edate,9,"%4.4i%2.2i%2.2i", sweep_end_ymd_p->year,
                          sweep_end_ymd_p->month, sweep_end_ymd_p->day);
       if(ncopied <= 1) {
-         fprintf(stderr,"Error when formatting sweep end date.\n");
-         fprintf(stderr,"Will attempt to continue.\n");
+         Iris_printf("Error when formatting sweep end date.\n");
+         Iris_printf("Will attempt to continue.\n");
       }
       /* transfer formatted sweep end time to string */
       sfm = sweep_end_ymd_p->seconds_since_midnight;
@@ -1068,8 +1150,8 @@ int populateScan(PolarScan_t* scan,
    seconds = sfm - hours*3600 - minutes*60;
    ncopied = snprintf(etime,7,"%2.2i%2.2i%2.2i", hours,minutes,seconds);
    if(ncopied <= 1) {
-      fprintf(stderr,"Error when formatting sweep end time.\n");
-      fprintf(stderr,"Will attempt to continue.\n");
+      Iris_printf("Error when formatting sweep end time.\n");
+      Iris_printf("Will attempt to continue.\n");
    }
    /* 
     * Attributes that are set at the scan level are common to all 
@@ -1202,11 +1284,11 @@ int populateObject(RaveCoreObject* object, file_element_s* file_element_p) {
    int ret = 0;
    int nscans = 0;
    int i, ncopied;
-   DList *sweep_list = NULL;
-   DListElmt *a_sweep_element = NULL;
+   IrisDList_t *sweep_list = NULL;
+   IrisDListElement_t *a_sweep_element = NULL;
    sweep_element_s *this_sweep_data = NULL;
-   DList *types_list = NULL;
-   DListElmt *a_type_element = NULL;
+   IrisDList_t *types_list = NULL;
+   IrisDListElement_t *a_type_element = NULL;
    datatype_element_s* this_type = NULL;
    struct ymds_time *sweep_start_ymd_p = NULL;
    struct ymds_time *product_generation_ymd_p = NULL;
@@ -1234,6 +1316,7 @@ int populateObject(RaveCoreObject* object, file_element_s* file_element_p) {
       strcat(source_missing,",NOD:xxxxx,PLC:Unknown");
       source=source_missing;
    }
+   
    /*
     * The top-level 'what' group has a time and date that are referred to
     * in the OPERA Data Information Model for HDF as 'Nominal' date and time.
@@ -1250,7 +1333,7 @@ int populateObject(RaveCoreObject* object, file_element_s* file_element_p) {
    char ntime[7];
    char ndate[9];
    int hourz, minutez, secondz, nominal_time_in_sfm;
-   int yearz, monthz, dayz;
+   int yearz=0, monthz=0, dayz=0;
    double time_in_seconds = 0.0;
    double time_in_minutes = 0.0;
    double nominal_time_in_minutes;
@@ -1315,13 +1398,13 @@ int populateObject(RaveCoreObject* object, file_element_s* file_element_p) {
    }
    ncopied = snprintf(ntime,7,"%2.2i%2.2i%2.2i",hourz,minutez, secondz);
    if(ncopied <= 1) {
-      fprintf(stderr,"Error while formulating nominal time.\n");
-      fprintf(stderr,"Will attempt to continue!\n");      
+      Iris_printf("Error while formulating nominal time.\n");
+      Iris_printf("Will attempt to continue!\n");
    }
    ncopied = snprintf(ndate,9,"%4.4i%2.2i%2.2i", yearz,monthz,dayz);
    if(ncopied <= 1) {
-      fprintf(stderr,"Error when formatting nominal date.\n");
-      fprintf(stderr,"Will attempt to continue.\n");
+      Iris_printf("Error when formatting nominal date.\n");
+      Iris_printf("Will attempt to continue.\n");
    }
    /* 
     * Assign some Top-level 'what' attributes 
@@ -1675,7 +1758,9 @@ int populateObject(RaveCoreObject* object, file_element_s* file_element_p) {
 file_element_s* readIRIS(const char* ifile) {
    int ret = -1;
    file_element_s* file_element_p = NULL;
-   if (!is_regular_file(ifile)) return NULL;
+   if (!is_regular_file(ifile)) {
+     return NULL;
+   }
    /*****************************************************************************
     *                                                                           *
     * allocate space for a file element structure, the file space pointed to by *
@@ -1685,7 +1770,7 @@ file_element_s* readIRIS(const char* ifile) {
    file_element_p = RAVE_MALLOC(sizeof(file_element_s));
    if(file_element_p == NULL) {
       /* inform client about allocation failure */
-      fprintf( stderr, "Error allocating 'file_element' structure.\n");
+      Iris_printf("Error allocating 'file_element' structure.\n");
       return NULL;
    }
    file_element_p->product_header_p = NULL;
@@ -1700,7 +1785,7 @@ file_element_s* readIRIS(const char* ifile) {
    file_element_p->product_header_p = RAVE_MALLOC(sizeof(phd_s));
    if(file_element_p->product_header_p == NULL) {
       /* inform client about allocation failure */
-      fprintf( stderr, "Error allocating 'product_header' structure.\n");
+      Iris_printf("Error allocating 'product_header' structure.\n");
       RAVE_FREE(file_element_p);
       return NULL;
    }
@@ -1713,7 +1798,7 @@ file_element_s* readIRIS(const char* ifile) {
    file_element_p->ingest_header_p = RAVE_MALLOC(sizeof(ihd_s));
    if(file_element_p->ingest_header_p == NULL) {
       /* inform client about allocation failure */
-      fprintf( stderr, "Error allocating 'ingest_header' structure.\n");
+      Iris_printf("Error allocating 'ingest_header' structure.\n");
       free_IRIS(&file_element_p);
       return NULL;
    }
@@ -1722,15 +1807,13 @@ file_element_s* readIRIS(const char* ifile) {
     *  allocate space and initialize the sweep list structure                   *
     *                                                                           *
     ****************************************************************************/
-   file_element_p->sweep_list_p = RAVE_MALLOC( sizeof(DList) );
+   file_element_p->sweep_list_p = IrisDList_create();
    if( file_element_p->sweep_list_p == NULL) {
       /* Tell client that the allocation failed */
-      fprintf( stderr, "Error allocating sweep DList structure.\n");
+      Iris_printf("Error allocating sweep IrisDList_t structure.\n");
       free_IRIS(&file_element_p);
       return NULL;
    }
-   /* initialize the list */
-   dlist_init(file_element_p->sweep_list_p, free);
 
    /*****************************************************************************
     * Read IRIS file and put all file contents into a doubly-linked list        *
@@ -1752,7 +1835,7 @@ file_element_s* readIRIS(const char* ifile) {
  */
 int objectTypeFromIRIS(file_element_s* file_element_p) {
    if (file_element_p != NULL) {
-      DList *sweep_list = file_element_p->sweep_list_p;
+      IrisDList_t *sweep_list = file_element_p->sweep_list_p;
       int sweeps_received = sweep_list->size;
       if(sweeps_received > 1) return Rave_ObjectType_PVOL;
       else return Rave_ObjectType_SCAN;
@@ -1769,12 +1852,12 @@ int objectTypeFromIRIS(file_element_s* file_element_p) {
  * Note: an ingest header is NOT the same as an ingest data header
  */
 void free_IRIS(file_element_s  **file_element_pp) {
-   DList *sweep_list = NULL;
-   DList *types_list = NULL;
-   DList *rays_list = NULL;
-   DListElmt *this_sweep_element = NULL;
-   DListElmt *this_type_element = NULL;
-   DListElmt *this_ray_element = NULL;
+   IrisDList_t *sweep_list = NULL;
+   IrisDList_t *types_list = NULL;
+   IrisDList_t *rays_list = NULL;
+   IrisDListElement_t *this_sweep_element = NULL;
+   IrisDListElement_t *this_type_element = NULL;
+   IrisDListElement_t *this_ray_element = NULL;
    datatype_element_s *this_type = NULL;
    sweep_element_s *this_sweep_data = NULL;
    idh_s *this_ingest_data_header = NULL;
@@ -1819,15 +1902,15 @@ void free_IRIS(file_element_s  **file_element_pp) {
     */
    for(int l=0; l < nsweeps; l++) {
       /* point to this element of the sweep list */
-      if(l==0) this_sweep_element = dlist_head(sweep_list);
-      else this_sweep_element = dlist_next(this_sweep_element);
+      if(l==0) this_sweep_element = IrisDList_head(sweep_list);
+      else this_sweep_element = IrisDListElement_next(this_sweep_element);
       /* 
        * if this sweep element is NULL then this list has ended pre-maturely
        * exit the loop
        * Note! This should never actually happen
        */
       if(this_sweep_element == NULL) {
-         fprintf(stderr,"Error! Premature end of sweep "
+         Iris_printf("Error! Premature end of sweep "
                         "list in free_IRIS function.\n");
          break;
       }
@@ -1839,7 +1922,7 @@ void free_IRIS(file_element_s  **file_element_pp) {
        * Note! This should never actually happen
        */
       if(this_sweep_data == NULL) {
-         fprintf(stderr,"Error! Sweep element with no data "
+         Iris_printf("Error! Sweep element with no data "
                  "encountered in free_IRIS function.\n");
          continue;
       }
@@ -1851,7 +1934,7 @@ void free_IRIS(file_element_s  **file_element_pp) {
        * Note! This should never actually happen
        */
       if(types_list == NULL) {
-         fprintf(stderr,"Error! Sweep element with no types list "
+         Iris_printf("Error! Sweep element with no types list "
                  "encountered in free_IRIS function.\n");
          continue;
       }
@@ -1863,7 +1946,7 @@ void free_IRIS(file_element_s  **file_element_pp) {
        * Note! This should never actually happen
        */
       if(ntypes == 0) {
-         fprintf(stderr,"Error! Zero length types list "
+         Iris_printf("Error! Zero length types list "
                  "encountered in free_IRIS function.\n");
          goto u;
       }
@@ -1876,15 +1959,15 @@ void free_IRIS(file_element_s  **file_element_pp) {
       this_type_element = NULL;
       for(int m=0; m < ntypes; m++) {
          /* point to this element of the type list */
-         if(m==0) this_type_element = dlist_head(types_list);
-         else this_type_element = dlist_next(this_type_element);
+         if(m==0) this_type_element = IrisDList_head(types_list);
+         else this_type_element = IrisDListElement_next(this_type_element);
          /* 
           * if this type element is NULL then this list has ended pre-maturely
           * exit the loop
           * Note! This should never actually happen
           */
          if(this_type_element == NULL) {
-            fprintf(stderr,"Error! Premature end of type "
+            Iris_printf("Error! Premature end of type "
                     "list in free_IRIS function.\n");
             break;
          }
@@ -1897,7 +1980,7 @@ void free_IRIS(file_element_s  **file_element_pp) {
           * Note! This should never actually happen
           */
          if(this_type == NULL) {
-            fprintf(stderr,"Error! Data-type element with no data "
+            Iris_printf("Error! Data-type element with no data "
                     "encountered in free_IRIS function.\n");
             continue;
          }
@@ -1919,7 +2002,7 @@ void free_IRIS(file_element_s  **file_element_pp) {
           * Note! This should never actually happen
           */
          if(rays_list == NULL) {
-            fprintf(stderr,"Error! Type element with no rays list "
+            Iris_printf("Error! Type element with no rays list "
                     "encountered in free_IRIS function.\n");
             continue;
          }
@@ -1931,7 +2014,7 @@ void free_IRIS(file_element_s  **file_element_pp) {
           * Note! This should never actually happen
           */
          if(nrays == 0) {
-            fprintf(stderr,"Error! Zero length rays list "
+            Iris_printf("Error! Zero length rays list "
                     "encountered in free_IRIS function.\n");
             goto t;
          }
@@ -2119,10 +2202,12 @@ int is_regular_file(const char *path) {
  * Intent: determines if the given file is intended to be in IRIS format
  */
 int isIRIS(const char *path) {
-   FILE *file = fopen(path, "r" );
+
+   FILE *file = fopen(path, "rb" );
+
    /* fopen returns 0, the NULL pointer, on failure */
    if (file == 0) { /* if failed to open file, tell the client */
-      fprintf(stderr, "Could not open file %s. Will abort!\n",path );
+      Iris_printf("Could not open file %s. Will abort!\n",path );
       return -1;
    }
    else {
@@ -2164,8 +2249,8 @@ int setRayAttributes(PolarScan_t* scan,
                      int sweep_index,
                      ra_s **ra_pp) {
    ra_s *ra_p = *ra_pp;
-   DList *sweep_list = file_element_p->sweep_list_p;
-   int n_sweeps_in_volume = dlist_size(sweep_list);
+   IrisDList_t *sweep_list = file_element_p->sweep_list_p;
+   int n_sweeps_in_volume = IrisDList_size(sweep_list);
    long max_nrays = ra_p->expected_nrays;
    double istartazT, istopazT;
    /* fill the ray start and stop times */
@@ -2624,7 +2709,7 @@ cci_s *create_consistency_check_arrays(size_t nsweeps) {
    cci_s *out;
    out = RAVE_MALLOC(sizeof *out);
    if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
          "Error! Unable to allocate a consistency check info structure.\n");
       return NULL;
    }
@@ -2636,7 +2721,7 @@ cci_s *create_consistency_check_arrays(size_t nsweeps) {
    UINT2 *dummy_UINT2_p;
    dummy_UINT2_p = (UINT2 *) RAVE_CALLOC(nsweeps, sizeof *dummy_UINT2_p);
    if( !dummy_UINT2_p ) {
-      fprintf(stderr,
+      Iris_printf(
          "Error! Unable to allocate index_of_first_ray_timewise array.\n");
       return NULL;
    }
@@ -2649,7 +2734,7 @@ cci_s *create_consistency_check_arrays(size_t nsweeps) {
     */
    dummy_UINT2_p = (UINT2 *) RAVE_CALLOC(nsweeps, sizeof *dummy_UINT2_p);
    if( !dummy_UINT2_p ) {
-      fprintf(stderr,
+      Iris_printf(
          "Error! Unable to allocate ray_highest_integral_seconds array.\n");
       return NULL;
    }
@@ -2668,7 +2753,7 @@ cci_s *create_consistency_check_arrays(size_t nsweeps) {
    mtv_s **mtv_array_p = NULL;
    mtv_array_p = (mtv_s **) RAVE_MALLOC( nsweeps*sizeof(mtv_s *) );
    if( !mtv_array_p ) {
-      fprintf(stderr,"Error! Unable to allocate mtv_s array of pointers.\n");
+      Iris_printf("Error! Unable to allocate mtv_s array of pointers.\n");
       return NULL;
    }
    /*
@@ -2679,9 +2764,10 @@ cci_s *create_consistency_check_arrays(size_t nsweeps) {
       /* point to an allocated structure */
       mtv_array_p[kv] = (mtv_s *) RAVE_MALLOC(sizeof(mtv_s));
       if( !mtv_array_p[kv] ) {
-         fprintf(stderr,"Error! Unable to allocate mtv_s structure.\n");
+         Iris_printf("Error! Unable to allocate mtv_s structure.\n");
          return NULL;
       }
+      memset(mtv_array_p[kv], 0, sizeof(mtv_s));
    }
    out->sweep_start_times_mtv_p = mtv_array_p;
    return out;
@@ -2779,7 +2865,7 @@ mtv_s *ymd_to_mtv( ymd_s *ymd_p ) {
    mtv_s *mtv_p;
    mtv_p = RAVE_MALLOC(sizeof *mtv_p);
    if( !mtv_p ) {
-      fprintf(stderr,"Error! Unable to allocate mtv_s structure.\n");
+      Iris_printf("Error! Unable to allocate mtv_s structure.\n");
       return NULL;
    }
    struct tm a_tm_struct;
@@ -2816,10 +2902,15 @@ mtv_s *ymd_to_mtv( ymd_s *ymd_p ) {
        */
 //      sometime->tm_isdst = -1;
        sometime->tm_isdst = 0;
+#ifndef _WIN32
    seconds = timegm( sometime );
+#else
+   seconds = _mkgmtime( sometime );
+#endif
+
    if( seconds == -1) {
-      fprintf(stderr,"Function mktime failed in function ymd_to_mtv.\n");
-      fprintf(stderr,
+      Iris_printf("Function mktime failed in function ymd_to_mtv.\n");
+      Iris_printf(
           "Will return a NULL instead of a my_time_value structure.\n");
       return NULL;
    }
@@ -2848,27 +2939,27 @@ mtv_s *ymd_to_mtv( ymd_s *ymd_p ) {
 void do_consistency_check(cci_s *cci_p, // <-- structure to fill
                           size_t nsweeps,
                           file_element_s *file_element_p) {
-   DList *ray_list = NULL;
-   DListElmt *datatype_element = NULL;
-   DListElmt *this_ray_element = NULL;
+   IrisDList_t *ray_list = NULL;
+   IrisDListElement_t *datatype_element = NULL;
+   IrisDListElement_t *this_ray_element = NULL;
    datatype_element_s *datatype_current = NULL;
    ray_s *this_ray_structure = NULL;
    ymd_s *sweep_start_ymd_p = NULL;
    UINT2 rays_in_this_sweep = 0;
    mtv_s *dummy_mtv_p = NULL;
-   DListElmt *this_sweep_element = NULL;
-   DList *types_list = NULL;
-   DList *sweep_list = file_element_p->sweep_list_p;
+   IrisDListElement_t *this_sweep_element = NULL;
+   IrisDList_t *types_list = NULL;
+   IrisDList_t *sweep_list = file_element_p->sweep_list_p;
    sweep_element_s *sweep_data_p = NULL;
    /* 
     * loop through the sweeps in this volume scan 
     */
    for(size_t mm = 0 ; mm < nsweeps; mm++ ) {
       if( mm == 0) {
-         this_sweep_element = dlist_head(sweep_list);
+         this_sweep_element = IrisDList_head(sweep_list);
       }
       else {
-         this_sweep_element = dlist_next(this_sweep_element);
+         this_sweep_element = IrisDListElement_next(this_sweep_element);
       }
       sweep_data_p = (sweep_element_s *) this_sweep_element->data;
       types_list = sweep_data_p->types_list_p;
@@ -2876,10 +2967,11 @@ void do_consistency_check(cci_s *cci_p, // <-- structure to fill
        * point to the first data-type structure in the datatype list
        * for this sweep 
        */
-      datatype_element = dlist_head(types_list);
+      datatype_element = IrisDList_head(types_list);
       datatype_current = (datatype_element_s *) datatype_element->data;
       ray_list = datatype_current->ray_list_p;
-      rays_in_this_sweep = (UINT2) dlist_size(ray_list);
+
+      rays_in_this_sweep = (UINT2) IrisDList_size(ray_list);
       /* sfs is seconds-from-start   (of current sweep) */
       UINT2 sfs_this_ray = 0;
       UINT2 sfs_last_ray = 0;
@@ -2900,11 +2992,12 @@ void do_consistency_check(cci_s *cci_p, // <-- structure to fill
       /* loop through the rays in this sweep */
       for(UINT2 k = 0; k < rays_in_this_sweep; k++) {
          if( k == 0) {
-            this_ray_element = dlist_head(ray_list);
+            this_ray_element = IrisDList_head(ray_list);
          }
          else {
-            this_ray_element = dlist_next(this_ray_element);
+            this_ray_element = IrisDListElement_next(this_ray_element);
          }
+
          this_ray_structure = (ray_s *) this_ray_element->data;
          if( k > 0 ) {
             sfs_last_ray = sfs_this_ray;
@@ -2935,6 +3028,7 @@ void do_consistency_check(cci_s *cci_p, // <-- structure to fill
       if(dummy_mtv_p != NULL) {
          cci_p->sweep_start_times_mtv_p[mm]->tv_sec = dummy_mtv_p->tv_sec;
          cci_p->sweep_start_times_mtv_p[mm]->tv_usec = dummy_mtv_p->tv_usec;
+         cci_p->sweep_start_times_mtv_p[mm]->isdst = dummy_mtv_p->isdst;
          RAVE_FREE(dummy_mtv_p);
       }
    } /* end for-loop sweeps */
@@ -2971,7 +3065,7 @@ ymd_s *mtv_to_ymd( mtv_s *mtv_p ) {
    struct tm *my_tm_p;
    my_tm_p = RAVE_MALLOC(sizeof *my_tm_p);
    if( my_tm_p == NULL ) {
-      fprintf(stderr,"Error! Unable to allocate 'tm' structure.\n");
+      Iris_printf("Error! Unable to allocate 'tm' structure.\n");
       return NULL;
    }
    /* set a pointer to the input number of seconds */
@@ -2981,7 +3075,7 @@ ymd_s *mtv_to_ymd( mtv_s *mtv_p ) {
    ymd_s *ymd_p;
    ymd_p = RAVE_MALLOC(sizeof *ymd_p);
    if( ymd_p == NULL) {
-      fprintf(stderr,"Error! Unable to allocate 'ymd' structure.\n");
+      Iris_printf("Error! Unable to allocate 'ymd' structure.\n");
       return NULL;
    }
    int my_yr =   my_tm_p->tm_year+1900;
@@ -3107,7 +3201,7 @@ double calc_nyquist(file_element_s *file_element_p) {
          nyquist_velocity = 0.;
          if(PRF1_hz_int != 0  && PRF2_hz_int != 0) {
             nyquist_velocity = wavelength_meters /
-                (4. * abs(PRT1 - PRT2));
+                (4. * fabs(PRT1 - PRT2));
          }
       }
    }

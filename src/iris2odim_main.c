@@ -28,7 +28,6 @@ along with RAVE.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
-#include "dlist.h"
 #include "iris2list_sigmet.h"
 #include "iris2list_listobj.h"
 #include "iris2list_interface.h"

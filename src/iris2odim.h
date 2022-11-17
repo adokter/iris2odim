@@ -27,18 +27,7 @@ along with RAVE.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef IRIS2ODIM_H
 #define IRIS2ODIM_H
-#define _POSIX_C_SOURCE 200809L
-#include <ctype.h>
-#include <stdio.h>
-#include <math.h>       // M_PI
-#include <stddef.h>	// size_t, NULL
-#include <stdlib.h>	// malloc, calloc, exit, free
-#include <string.h>
-#include <time.h>       // localtime_r
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include "dlist.h"
+#include "irisdlist.h"
 #include "iris2list_sigmet.h"
 #include "iris2list_listobj.h"
 #include "rave_alloc.h"
@@ -53,6 +42,41 @@ along with RAVE.  If not, see <http://www.gnu.org/licenses/>.
 # define MY_ABS(x)    ((x) < 0 ? -(x) : (x))  /* used in conjunction with the relative difference function reldif */
 # define MY_MAX(a, b) ((a) > (b) ? (a) : (b))  /* used in conjunction with the relative difference function reldif */
 # define TOLERENCE (0.000001) /* used in conjunction with the relative difference function reldif */
+
+/**
+ * Typedef for print function
+ */
+typedef void(*iris_printfun)(const char* msg);
+
+/**
+ * The default printf function routing prints to stderr unless -DIRIS_NO_EXIT_OR_STDERR has been specified.
+ */
+void Iris_default_printf(const char* msg);
+
+/**
+ * Sets the print function to where printouts should be done. Default behaviour is to use
+ * Iris_default_printf.
+ * @param[in] fun - the default printer
+ */
+void Iris_set_printf(iris_printfun fun);
+
+/**
+ * Wraps exit into it's own function to be able to disable hard exit when used in app.
+ * Will either return code or do a hard exit depending on if -DIRIS_NO_EXIT_OR_STDERR has
+ * been defind or not.
+ * @param[in] return_code - the return value for this function if IRIS_NO_EXIT_OR_STDERR has been defined.
+ * @param[in] exit_code - the exit code used to call exit if IRIS_NO_EXIT_OR_STDERR hasn't been defined.
+ * Output:
+ * @return the return_code
+ */
+int Iris_exit_function(int return_code, int exit_code);
+
+/**
+ * Wraps fprintf into it's own function to be able to disable printouts depending on if DIRIS_NO_EXIT_OR_STDERR has been set or not
+ * @param[in] fmt - a string containing the output format
+ * @param[in] ... - variable argument list
+ */
+void Iris_printf(const char* fmt, ...);
 
 /**
  *

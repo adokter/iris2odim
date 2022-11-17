@@ -47,8 +47,8 @@ deb-CFLAGS=-Wall -Wextra -Wunreachable-code -Wfloat-equal -Wshadow -Wundef -Wpoi
 # --------------------------------------------------------------------
 # Fixed definitions
 
-IRIS2ODIMSOURCES= iris2odim_main.c iris2odim.c iris2list.c dlist.c
-INSTALL_HEADERS= iris2odim.h iris2list_interface.h iris2list_listobj.h iris2list_sigmet.h dlist.h
+IRIS2ODIMSOURCES= iris2odim_main.c iris2odim.c iris2list.c irisdlist.c
+INSTALL_HEADERS= iris2odim.h iris2list_interface.h iris2list_listobj.h iris2list_sigmet.h irisdlist.h
 IRIS2ODIMOBJS= $(IRIS2ODIMSOURCES:.c=.o)
 LIBIRIS2ODIM= libiris2odim.so
 IRIS2ODIMMAIN= iris2odim_main.c

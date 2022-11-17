@@ -25,16 +25,23 @@ along with RAVE.  If not, see <http://www.gnu.org/licenses/>.
  */
 //#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
+#include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h> //strtok_s, memcpy
+#include <math.h>       // M_PI
+#include <stddef.h> // size_t, NULL
+#include <stdlib.h> // malloc, calloc, exit, free
+#include <string.h>
+#include <time.h>       // localtime_r
 #include <sys/types.h>
-#include <time.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "iris2odim.h" // this includes rave_alloc and other rave related
 #include "iris2list_listobj.h"
 #include "iris2list_sigmet.h"
 #include "iris2list_interface.h"
+#include "rave_alloc.h"
+
 /*****************************************************************************
 *                                                                            *
 *  ------------------------------ iris2list -------------------------------  *
@@ -52,14 +59,14 @@ along with RAVE.  If not, see <http://www.gnu.org/licenses/>.
 *****************************************************************************/
 int iris2list(const char *ifile,
               file_element_s **file_element_pp) {
-   DList *sweeplist = (*file_element_pp)->sweep_list_p;
+   IrisDList_t *sweeplist = (*file_element_pp)->sweep_list_p;
    sweep_element_s *sweep_list_element = NULL;
    sweep_element_s *sweep_list_element_new = NULL;
-   DList *datatypelist = NULL;
+   IrisDList_t *datatypelist = NULL;
    datatype_element_s *datatype_data_p = NULL;
-   DList *raylist = NULL;
+   IrisDList_t *raylist = NULL;
    ray_s *ray_list_element_p = NULL;
-   DListElmt *datatype_current = NULL;
+   IrisDListElement_t *datatype_current = NULL;
    rpb_s *rpb_p = NULL;
    rayplus_s *rayplus_p = NULL;
    _Bool target_is_big_endian;
@@ -79,9 +86,9 @@ int iris2list(const char *ifile,
     * try to ascertain if the file is big_endian or little_endian               *
     *                                                                           *
     ****************************************************************************/
-   fpIn = fopen( ifile, "r" );
+   fpIn = fopen( ifile, "rb" );
    if( fpIn == NULL) {        /* if failed to open file, tell the user */
-      fprintf(stderr,"Failed to open IRIS file %s.\n",ifile);
+      Iris_printf("Failed to open IRIS file %s.\n",ifile);
       free_IRIS(file_element_pp);
       return -1;
    }
@@ -96,7 +103,7 @@ int iris2list(const char *ifile,
       c[0] = c[1];
       c[1] = dummyc;
       if( *structID_p != 27) {
-         fprintf(stderr,
+         Iris_printf(
          "Failed to establish endian status of input file.\n"
          "Likely this is because the input file is NOT an IRIS file.\n");
          free_IRIS(file_element_pp);
@@ -138,7 +145,7 @@ int iris2list(const char *ifile,
    bytes2Copy  = PRODUCT_HDR_SIZE;
    IRISbuf_p = getabuf( fpIn, bytes2Copy );
    if( IRISbuf_p == NULL ) {
-      fprintf(stderr,
+      Iris_printf(
              "First call to 'getabuf' returned no product_hdr structure.\n");
       if(*file_element_pp != NULL) {
          free_IRIS(file_element_pp);
@@ -151,7 +158,7 @@ int iris2list(const char *ifile,
       return -1;
    }
    if(IRISbuf_p->errorInd == 1) {
-      fprintf(stderr,
+      Iris_printf(
              "First call to 'getabuf' returned a read error.\n");
       if(*file_element_pp != NULL) {
          free_IRIS(file_element_pp);
@@ -169,7 +176,7 @@ int iris2list(const char *ifile,
       return -1;
    }
    else if( IRISbuf_p->errorInd == 2 ) {
-      fprintf(stderr,"Hit EOF during first call to 'getabuf'.\n");
+      Iris_printf("Hit EOF during first call to 'getabuf'.\n");
       if(*file_element_pp != NULL) {
          free_IRIS(file_element_pp);
          *file_element_pp = NULL;
@@ -193,7 +200,7 @@ int iris2list(const char *ifile,
     */
    phd_p = extract_product_hdr(IRISbuf_p,target_is_big_endian);
    if( phd_p == NULL) {     /* inform client about allocation failure */
-      fprintf( stderr, "Error allocating 'product_hdr' structure.\n");
+      Iris_printf("Error allocating 'product_hdr' structure.\n");
       if(*file_element_pp != NULL) {
          free_IRIS(file_element_pp);
          *file_element_pp = NULL;
@@ -223,7 +230,7 @@ int iris2list(const char *ifile,
       }
       IRISbuf_p = getabuf( fpIn, bytes2Copy );
       if( IRISbuf_p == NULL ) {
-         fprintf(stderr,"First call 'getabuf' "
+         Iris_printf("First call 'getabuf' "
             "after extracting product_hdr structure failed.\n");
          if(*file_element_pp != NULL) {
             free_IRIS(file_element_pp);
@@ -236,7 +243,7 @@ int iris2list(const char *ifile,
          return -1;
       }
       if(IRISbuf_p->errorInd == 1) {
-         fprintf(stderr,"First call to 'getabuf' "
+         Iris_printf("First call to 'getabuf' "
             "after extracting product_hdr structure returned a read error.\n");
          if(*file_element_pp != NULL) {
             free_IRIS(file_element_pp);
@@ -254,7 +261,7 @@ int iris2list(const char *ifile,
          return -1;
       }
       else if( IRISbuf_p->errorInd == 2 ) {
-         fprintf(stderr,"Hit EOF during first call to 'getabuf'"
+         Iris_printf("Hit EOF during first call to 'getabuf'"
             "after extracting product_hdr structure.\n");
          if(*file_element_pp != NULL) {
             free_IRIS(file_element_pp);
@@ -298,7 +305,7 @@ int iris2list(const char *ifile,
       }
       IRISbuf_p = getabuf( fpIn, bytes2Copy );
       if( IRISbuf_p == NULL ) {
-         fprintf(stderr,"Second call to 'getabuf' "
+         Iris_printf("Second call to 'getabuf' "
                  "returned no ingest_header structure.\n");
          if(fpIn != NULL) {
             fclose(fpIn);
@@ -311,7 +318,7 @@ int iris2list(const char *ifile,
          return -1;
       }
       if(IRISbuf_p->errorInd == 1) {
-         fprintf(stderr,"Second call to 'getabuf' returned a read error.\n");
+         Iris_printf("Second call to 'getabuf' returned a read error.\n");
          if( IRISbuf_p != NULL) {
             bufIRIS_p = NULL;
             RAVE_FREE(IRISbuf_p);
@@ -328,7 +335,7 @@ int iris2list(const char *ifile,
          return -1;
       }
       else if( IRISbuf_p->errorInd == 2 ) {
-         fprintf(stderr,"Hit EOF during second call to 'getabuf'.\n");
+         Iris_printf("Hit EOF during second call to 'getabuf'.\n");
          if( IRISbuf_p != NULL) {
             bufIRIS_p = NULL;
             RAVE_FREE(IRISbuf_p);
@@ -351,7 +358,7 @@ int iris2list(const char *ifile,
        */
       ihd_s *ihd_p  = extract_ingest_header(IRISbuf_p, target_is_big_endian);
       if( ihd_p == NULL) {     /* inform client about allocation failure */
-         fprintf( stderr, "Error allocating 'ingest_header' structure.\n");
+         Iris_printf("Error allocating 'ingest_header' structure.\n");
          if( IRISbuf_p != NULL) {
             bufIRIS_p = NULL;
             RAVE_FREE(IRISbuf_p);
@@ -389,7 +396,7 @@ int iris2list(const char *ifile,
    bytes2Copy  = IRIS_BUFFER_SIZE;
    while( (IRISbuf_p = getabuf( fpIn , bytes2Copy)) != NULL) {
       if( IRISbuf_p == NULL ) {
-         fprintf(stderr,"Call to 'getabuf' returned no IRIS buffer structure.");
+         Iris_printf("Call to 'getabuf' returned no IRIS buffer structure.");
          if(file_element_pp != NULL) {
             free_IRIS(file_element_pp);
             *file_element_pp = NULL;
@@ -401,7 +408,7 @@ int iris2list(const char *ifile,
          return -1;
       }
       if(IRISbuf_p->errorInd == 1) {
-         fprintf(stderr,"Call to 'getabuf' returned a read error.\n");
+         Iris_printf("Call to 'getabuf' returned a read error.\n");
          bufIRIS_p = NULL;
          RAVE_FREE(IRISbuf_p);
          IRISbuf_p = NULL;
@@ -454,7 +461,7 @@ int iris2list(const char *ifile,
           * check. It should never be negative.                                       *
           ****************************************************************************/
          if( recNum < 0 ) {
-            fprintf( stderr,
+            Iris_printf(
                     "No read error but negative record number in input file\n"
                     "indicates 'bad record read'.\nWill attempt to continue");
          }
@@ -465,9 +472,9 @@ int iris2list(const char *ifile,
        ****************************************************************************/
       rpb_p  = extract_raw_prod_bhdr(IRISbuf_p,target_is_big_endian);
       if( rpb_p == NULL) {
-         fprintf(stderr,"Exit from extract_raw_prod_bhdr"
+         Iris_printf("Exit from extract_raw_prod_bhdr"
                         " with Null rpb_p structure.\n");
-         fprintf(stderr,"It usually means the program was unable to allocate"
+         Iris_printf("It usually means the program was unable to allocate"
                         " an rpb structure.\n");
          if( IRISbuf_p != NULL) {
             bufIRIS_p = NULL;
@@ -503,9 +510,9 @@ int iris2list(const char *ifile,
                                       IRISbuf_p,
                                       target_is_big_endian);
          if(sweep_list_element_new == NULL) {
-            fprintf(stderr,"Exit from handle_ingest_data_headers"
+            Iris_printf("Exit from handle_ingest_data_headers"
                            " with Null sweep_list_element_new structure.\n");
-            fprintf(stderr,"It usually means the program was unable to allocate"
+            Iris_printf("It usually means the program was unable to allocate"
                            " a sweep_list_element structure.\n");
             free_IRIS(file_element_pp);
             if (fpIn != NULL) fclose(fpIn);
@@ -523,7 +530,7 @@ int iris2list(const char *ifile,
           ****************************************************************************/
          datatype_current = NULL;
          /* isolate the number of data types saved in the sweep */
-         types_in_sweep = (SINT2) dlist_size(datatypelist);
+         types_in_sweep = (SINT2) IrisDList_size(datatypelist);
          /* set the byte offset to what it "should" be */
          byte_offset = RAW_PROD_BHDR_SIZE +
             (UINT2) types_in_sweep * INGEST_DATA_HEADER_SIZE;
@@ -562,9 +569,9 @@ int iris2list(const char *ifile,
                                      target_is_big_endian);
          /* exit the program if nothing returned from extract_rayplus */
          if( rayplus_p == NULL) {
-            fprintf(stderr,
+            Iris_printf(
                 "Exit from extract_rayplus with Null rayplus structure?\n");
-            fprintf(stderr,
+            Iris_printf(
                "It usually means the program was unable to allocate a structure.\n");
             if(*file_element_pp != NULL) {
                free_IRIS(file_element_pp);
@@ -664,9 +671,9 @@ int iris2list(const char *ifile,
              *  with the one passed back from the function.
              ****************************************************************************/
             if( rayplus_p->new_sweep_element_p == NULL) {
-               fprintf(stderr,"Exit from extract_rayplus with Null "
+               Iris_printf("Exit from extract_rayplus with Null "
                               "sweep_element_p structure?\n");
-               fprintf(stderr,"It usually means the program was unable to allocate"
+               Iris_printf("It usually means the program was unable to allocate"
                               " a sweep_element_s structure.\n");
                free_IRIS(file_element_pp);
                if (fpIn != NULL) fclose(fpIn);
@@ -684,7 +691,7 @@ int iris2list(const char *ifile,
              ****************************************************************************/
             datatype_current = NULL;
             /* isolate the number of data types saved in this sweep */
-            types_in_sweep = (SINT2) dlist_size(datatypelist);
+            types_in_sweep = (SINT2) IrisDList_size(datatypelist);
             /* re-initialize the ray count array */
             for(int nnn=0; nnn < (MAX_DATA_TYPES_IN_FILE); nnn++) ray_count[nnn] = 0;
             /* set the type index to zero, which is the first element of a type array */
@@ -734,18 +741,18 @@ int iris2list(const char *ifile,
              * no, there was no error but we did not hit the end-of-ray code ???
              * for now, tell user, and continue, see what happens
              ****************************************************************************/
-            fprintf(stderr,"Did not encounter end-of-ray code? Will try to continue. \n");
+            Iris_printf("Did not encounter end-of-ray code? Will try to continue. \n");
          }
          /*****************************************************************************
           * if the pointer 'datatype_current' is currently not pointing to anything, 
           * then set the pointer to the head element of the data type list
           ****************************************************************************/
          if(datatype_current == NULL) {
-            if(dlist_head(datatypelist) != NULL) {
-               datatype_current = dlist_head(datatypelist);
+            if(IrisDList_head(datatypelist) != NULL) {
+               datatype_current = IrisDList_head(datatypelist);
             }
             else {
-               fprintf(stderr,"dlist_head(datatypelist) == NULL? "
+               Iris_printf("IrisDList_head(datatypelist) == NULL? "
                               "Should never happen. \n");
                free_IRIS(file_element_pp);
                if (fpIn != NULL) fclose(fpIn);
@@ -758,8 +765,8 @@ int iris2list(const char *ifile,
              * is currently pointing to the tail element,then set it to point to the head 
              * element
              ****************************************************************************/
-            if(dlist_is_tail(datatype_current)) {
-               datatype_current = dlist_head(datatypelist);
+            if(IrisDListElement_next(datatype_current) == NULL) { /* tail */
+               datatype_current = IrisDList_head(datatypelist);
                type_index = 0;
             }
             /*****************************************************************************
@@ -767,7 +774,7 @@ int iris2list(const char *ifile,
              * point to the next element in the list
              ****************************************************************************/
             else {
-               datatype_current = dlist_next(datatype_current);
+               datatype_current = IrisDListElement_next(datatype_current);
                type_index++;
             }
          }
@@ -779,16 +786,16 @@ int iris2list(const char *ifile,
             datatype_current != NULL ) {
                 datatype_data_p = (datatype_element_s *) datatype_current->data;
             raylist = datatype_data_p->ray_list_p;
-            if(dlist_size(raylist) == 0) {
+            if(IrisDList_size(raylist) == 0) {
                /*
                 * if the ray list is empty then
                 * insert ray before head element of list
                 */
-               dlist_ins_prev(raylist,dlist_head(raylist), ray_list_element_p);
+               (void)IrisDList_addFront(raylist, ray_list_element_p);
             }
             else {
                /* else insert ray after tail element of list */
-               dlist_ins_next(raylist,dlist_tail(raylist), ray_list_element_p);
+               (void)IrisDList_addEnd(raylist, ray_list_element_p);
             }
             ray_list_element_p = NULL;
             ray_count[type_index]++;
@@ -851,11 +858,11 @@ se:   if(IRISbuf_p == NULL) break;
 
    /* insert the last sweep into the sweep list */
    if(sweep_list_element != NULL) {
-      if(dlist_size(sweeplist) == 0) {
-         dlist_ins_prev(sweeplist,dlist_head(sweeplist), sweep_list_element);
+      if(IrisDList_size(sweeplist) == 0) {
+         (void)IrisDList_addFront(sweeplist, sweep_list_element);
       }
       else {
-         dlist_ins_next(sweeplist,dlist_tail(sweeplist), sweep_list_element);
+         (void)IrisDList_addEnd(sweeplist, sweep_list_element);
       }
    }
    if (fpIn != NULL) fclose(fpIn);
@@ -868,7 +875,7 @@ se:   if(IRISbuf_p == NULL) break;
 *                                                                            *
 *****************************************************************************/
 sweep_element_s  *handle_ingest_data_headers(
-                              DList **sweeplist,
+                              IrisDList_t **sweeplist,
                               sweep_element_s **sweep_list_element_pp,
                               IRISbuf *IRISbuf_p,
                               _Bool target_is_big_endian) {
@@ -886,11 +893,11 @@ sweep_element_s  *handle_ingest_data_headers(
     * then insert the last sweep_list_elelment into the sweep list
     */
    if(*sweep_list_element_pp != NULL) {
-      if(dlist_size(*sweeplist) == 0) {
-         dlist_ins_prev(*sweeplist,dlist_head(*sweeplist), *sweep_list_element_pp);
+      if(IrisDList_size(*sweeplist) == 0) {
+         (void)IrisDList_addFront(*sweeplist, *sweep_list_element_pp);
       }
       else {
-         dlist_ins_next(*sweeplist,dlist_tail(*sweeplist), *sweep_list_element_pp);
+         (void)IrisDList_addEnd(*sweeplist, *sweep_list_element_pp);
       }
       /* set the pointer to NULL now that the structure is in the list */
       *sweep_list_element_pp = NULL;
@@ -898,7 +905,7 @@ sweep_element_s  *handle_ingest_data_headers(
    /* allocate a new sweep list element for the sweep list */
    sweep_element_s *new_sweep = RAVE_MALLOC(sizeof *new_sweep);
    if( !new_sweep ) {
-      fprintf(stderr,
+      Iris_printf(
          "Error! Unable to allocate 'sweep_element' structure in"
          " function 'handle_ingest_data_headers'.\n");
       return NULL;
@@ -910,14 +917,14 @@ sweep_element_s  *handle_ingest_data_headers(
     *                                                                            *
     *****************************************************************************/
    /* allocate space for a doubly linked list structure, and point to it */
-   DList *datatypelist = RAVE_MALLOC(sizeof *datatypelist);
+   IrisDList_t *datatypelist = IrisDList_create();
    if( !datatypelist ) {
-      fprintf(stderr,
-         "Error! Unable to allocate 'datatypelist' DList structure in"
+      Iris_printf(
+         "Error! Unable to allocate 'datatypelist' IrisDList structure in"
          " function 'handle_ingest_data_headers'.\n");
       return NULL;
    }
-   dlist_init(datatypelist, free);
+
    /* attach this data type list to the current sweep element */
    new_sweep->types_list_p = datatypelist;
    /* 
@@ -943,8 +950,8 @@ sweep_element_s  *handle_ingest_data_headers(
       /* allocate space for a data type element structure, and point to it */
       type_list_element = RAVE_MALLOC(sizeof *type_list_element);
       if( !type_list_element ) {
-         fprintf(stderr,
-            "Error! Unable to allocate 'type_list_element' DList structure in"
+         Iris_printf(
+            "Error! Unable to allocate 'type_list_element' IrisDList structure in"
             " function 'handle_ingest_data_headers'.\n");
          return NULL;
       }
@@ -968,15 +975,14 @@ sweep_element_s  *handle_ingest_data_headers(
        *  will hold ray data.                                                       *
        *                                                                            *
        *****************************************************************************/
-      DList *raylist;
-      raylist = RAVE_MALLOC( sizeof *raylist );
+      IrisDList_t *raylist = IrisDList_create();
       if( !raylist ) {
-         fprintf(stderr,
+         Iris_printf(
             "Error! Unable to allocate 'raylist' DList structure in"
             " function 'handle_ingest_data_headers'.\n");
          return NULL;
       }
-      dlist_init(raylist, free);
+
       /*
        * the empty ray list is ready so...
        * attach this ray list to the current data type list-element
@@ -986,13 +992,11 @@ sweep_element_s  *handle_ingest_data_headers(
        *  insert this data-type list-element to the data-type list
        * even though the ray list is empty at this point
        */
-      if(dlist_size(datatypelist) == 0) {
-         dlist_ins_prev(datatypelist,
-                        dlist_head(datatypelist),
-                        type_list_element);
+      if(IrisDList_size(datatypelist) == 0) {
+        (void)IrisDList_addFront(datatypelist, type_list_element);
       }
       else {
-         dlist_ins_next(datatypelist,dlist_tail(datatypelist), type_list_element);
+        (void)IrisDList_addEnd(datatypelist, type_list_element);
       }
       /* 
        * update the input record byte_offset and see if 
@@ -1030,10 +1034,10 @@ sweep_element_s  *handle_ingest_data_headers(
 /* ======================================================================== */
 rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                              UINT2 offset,
-                             DList **sweeplist_pp,
-                   sweep_element_s **sweep_list_element_pp,
+                             IrisDList_t **sweeplist_pp,
+                             sweep_element_s **sweep_list_element_pp,
                              SINT2 current_sweep,
-                              FILE *fp,
+                             FILE *fp,
                              _Bool target_is_big_endian ) {
    UINT1 *ptr_s1;
    UINT1 my12bytes[12];
@@ -1051,7 +1055,7 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
    UINT1 dummy_uint1 = 0;
    UINT1 myCodeBytes[2];
    SINT2 *cw_p = NULL;
-   DList *sweeplist = NULL;
+   IrisDList_t *sweeplist = NULL;
    sweep_element_s *sweep_list_element = NULL;
    /*
     *  Initially we set IRISbuf_p to point to the 
@@ -1073,7 +1077,7 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
    ray_s *this_ray = NULL;
    this_ray = (ray_s*) RAVE_MALLOC(sizeof(ray_s));
    if( this_ray == NULL ) {
-      fprintf(stderr,
+      Iris_printf(
               "Error! Unable to allocate 'ray_s' structure in"
               " function 'extract_rayplus'.\n");
       return NULL;
@@ -1089,7 +1093,7 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
    rayplus_s *out = NULL;
    out = RAVE_MALLOC( sizeof *out );
    if( out == NULL ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'rayplus' structure in"
           " function 'extract_rayplus'.\n");
       return NULL;
@@ -1126,8 +1130,8 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
          UINT2 bytes2Copy  = IRIS_BUFFER_SIZE;
          out->new_IRISbuf_p = getabuf( fp, bytes2Copy);
          if( out->new_IRISbuf_p == NULL) {
-            fprintf( stderr, "Unable to allocate a buffer in 'getabuf.\n");
-            fprintf( stderr, "Exiting program.\n");
+            Iris_printf("Unable to allocate a buffer in 'getabuf.\n");
+            Iris_printf("Exiting program.\n");
             if(this_ray != NULL) {  // ray_s *this_ray
                RAVE_FREE(this_ray);
                this_ray = NULL;
@@ -1150,9 +1154,9 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
           * at the very least return with some sort of error indication
           */
          if(IRISbuf_p->errorInd == 1) {
-            fprintf( stderr,
+            Iris_printf(
                "Unknown error occurred while reading input file'\n");
-            fprintf( stderr,
+            Iris_printf(
                "Will abandon ray and abandon buffer and try to continue.\n");
             out->ray->abandon_buf = 1;
             out->ray->abandon_ray = 1;
@@ -1178,9 +1182,9 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
          if( rpb_p != NULL) RAVE_FREE(rpb_p);
          out->new_rpb_p  = extract_raw_prod_bhdr(IRISbuf_p,target_is_big_endian);
          if( out->new_rpb_p == NULL) {
-            fprintf( stderr,
+            Iris_printf(
                "Unable to allocate a structure in 'extract_raw_prod_bhdr.\n");
-            fprintf( stderr, "Exiting program.\n");
+            Iris_printf("Exiting program.\n");
             if(out->new_IRISbuf_p != NULL) {
                RAVE_FREE(out->new_IRISbuf_p);
                out->new_IRISbuf_p = NULL;
@@ -1213,10 +1217,10 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                                          IRISbuf_p,
                                          target_is_big_endian);
               if(out->new_sweep_element_p == NULL) {
-               fprintf( stderr,
+               Iris_printf(
                   "Unable to allocate a structure in function"
                   "'handle_ingest_data_headers'.\n");
-               fprintf( stderr, "Exiting program.\n");
+               Iris_printf("Exiting program.\n");
                if(IRISbuf_p!= NULL) {  // IRISbuf *IRISbuf_p
                   RAVE_FREE(IRISbuf_p);
                   IRISbuf_p = NULL;
@@ -1235,8 +1239,8 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                /* re-assign the old pointer to a new sweep element */
                sweep_list_element = out->new_sweep_element_p;
             }
-            DList *datatypelist = sweep_list_element->types_list_p;
-            SINT2 types_in_sweep = (SINT2) dlist_size(datatypelist);
+            IrisDList_t *datatypelist = sweep_list_element->types_list_p;
+            SINT2 types_in_sweep = (SINT2) IrisDList_size(datatypelist);
             current_offset = RAW_PROD_BHDR_SIZE +
                (UINT2) types_in_sweep * INGEST_DATA_HEADER_SIZE;
             ptr_s1 = bufIRIS_p + current_offset;
@@ -1280,13 +1284,13 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
        * Note ! This should NEVER occur
        */
       if( lowBits  > MAX_RAY_BODY_SIZE ) {
-         fprintf( stderr, "Error! lowBits greater than MAX_RAY_BODY_SIZE.\n");
-         fprintf( stderr, "lowBits = %i; lastLowBits = %i;"
+         Iris_printf("Error! lowBits greater than MAX_RAY_BODY_SIZE.\n");
+         Iris_printf("lowBits = %i; lastLowBits = %i;"
                            "codeWord = %i; lastCodeWord = %i; \n",
                            lowBits,lastLowBits,codeWord, lastCodeWord);
-         fprintf( stderr, "ray_bytes_filled = %i; current_offset = %u.\n",
+         Iris_printf("ray_bytes_filled = %i; current_offset = %u.\n",
                   ray_bytes_filled, current_offset);
-         fprintf( stderr, "Exiting program.\n");
+         Iris_printf("Exiting program.\n");
          if(IRISbuf_p!= NULL) {  // IRISbuf *IRISbuf_p
             RAVE_FREE(IRISbuf_p);
             IRISbuf_p = NULL;
@@ -1306,13 +1310,13 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
        * Note ! This should NEVER occur
        */
       else if( lowBits < 0 ) {
-         fprintf( stderr, "Error! Negative lowBits in ray decode-word.\n");
-         fprintf( stderr, "lowBits = %i; lastLowBits = %i;"
+         Iris_printf("Error! Negative lowBits in ray decode-word.\n");
+         Iris_printf("lowBits = %i; lastLowBits = %i;"
                            "codeWord = %i; lastCodeWord = %i; \n",
                            lowBits,lastLowBits,codeWord, lastCodeWord);
-         fprintf( stderr, "ray_bytes_filled = %i; current_offset = %u.\n",
+         Iris_printf("ray_bytes_filled = %i; current_offset = %u.\n",
                   ray_bytes_filled, current_offset);
-         fprintf( stderr, "Exiting program.\n");
+         Iris_printf("Exiting program.\n");
          if(IRISbuf_p!= NULL) {  // IRISbuf *IRISbuf_p
             RAVE_FREE(IRISbuf_p);
             IRISbuf_p = NULL;
@@ -1368,11 +1372,11 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                 * and return with what we have.
                 */
                if( (ray_bytes_filled + 1) >= MAX_RAY_BODY_SIZE ) {
-                  fprintf( stderr, "Potential output ray overflow, abandoning ray.\n");
-                  fprintf( stderr, "lowBits = %i; lastLowBits = %i;"
+                  Iris_printf("Potential output ray overflow, abandoning ray.\n");
+                  Iris_printf("lowBits = %i; lastLowBits = %i;"
                            "codeWord = %i; lastCodeWord = %i; \n",
                            lowBits,lastLowBits,codeWord, lastCodeWord);
-                  fprintf( stderr, "ray_bytes_filled = %i; current_offset = %u.\n",
+                  Iris_printf("ray_bytes_filled = %i; current_offset = %u.\n",
                   ray_bytes_filled, current_offset);
                   out->ray->ray_body_size_in_bytes = ray_bytes_filled;
                   out->updated_offset = current_offset;
@@ -1402,8 +1406,8 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                UINT2 myBytes2Copy = IRIS_BUFFER_SIZE;
                out->new_IRISbuf_p = getabuf( fp, myBytes2Copy );
                if( out->new_IRISbuf_p == NULL) {
-                  fprintf( stderr, "Unable to allocate a buffer in 'getabuf.\n");
-                  fprintf( stderr, "Exiting program.\n");
+                  Iris_printf("Unable to allocate a buffer in 'getabuf.\n");
+                  Iris_printf("Exiting program.\n");
                   if(this_ray != NULL) {  // ray_s *this_ray
                      RAVE_FREE(this_ray);
                      this_ray = NULL;
@@ -1425,9 +1429,9 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                 *  at the very least return with some sort of error indication
                 */
                if(IRISbuf_p->errorInd == 1) {
-                  fprintf( stderr,
+                  Iris_printf(
                      "Unknown error occurred while reading file in 'getabuf.\n");
-                  fprintf( stderr,
+                  Iris_printf(
                      "Will abandon both ray and buffer and try to continue.\n");
                   out->ray->abandon_buf = 1;
                   out->ray->abandon_ray = 1;
@@ -1452,9 +1456,9 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                if( rpb_p != NULL) RAVE_FREE(rpb_p);
                out->new_rpb_p  = extract_raw_prod_bhdr(IRISbuf_p,target_is_big_endian);
                if( out->new_rpb_p == NULL) {
-                  fprintf( stderr,
+                  Iris_printf(
                            "Unable to allocate a structure in 'extract_raw_prod_bhdr.\n");
-                  fprintf( stderr, "Exiting program.\n");
+                  Iris_printf("Exiting program.\n");
                   if(out->new_IRISbuf_p != NULL) {
                      RAVE_FREE(out->new_IRISbuf_p);
                      out->new_IRISbuf_p = NULL;
@@ -1487,10 +1491,10 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                                              IRISbuf_p,
                                              target_is_big_endian);
                   if(out->new_sweep_element_p == NULL) {
-                     fprintf( stderr,
+                     Iris_printf(
                               "Unable to allocate a structure in function"
                               "'handle_ingest_data_headers'.\n");
-                     fprintf( stderr, "Exiting program.\n");
+                     Iris_printf("Exiting program.\n");
                      if(IRISbuf_p!= NULL) {  // IRISbuf *IRISbuf_p
                         RAVE_FREE(IRISbuf_p);
                         IRISbuf_p = NULL;
@@ -1509,8 +1513,8 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                      /* re-assign the old pointer to a new sweep element */
                      sweep_list_element = out->new_sweep_element_p;
                   }
-                  DList *datatypelist = sweep_list_element->types_list_p;
-                  SINT2 types_in_sweep = (SINT2) dlist_size(datatypelist);
+                  IrisDList_t *datatypelist = sweep_list_element->types_list_p;
+                  SINT2 types_in_sweep = (SINT2) IrisDList_size(datatypelist);
                   current_offset = RAW_PROD_BHDR_SIZE +
                   (UINT2) types_in_sweep * INGEST_DATA_HEADER_SIZE;
                   ptr_s1 = bufIRIS_p + current_offset;
@@ -1544,7 +1548,7 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
                   }
                   else {
                      /* Tell user about that the allocation failed */
-                     fprintf( stderr, "Error allocating 'ray_header' structure.\n");
+                     Iris_printf("Error allocating 'ray_header' structure.\n");
                      if(IRISbuf_p!= NULL) {  // IRISbuf *IRISbuf_p
                         RAVE_FREE(IRISbuf_p);
                         IRISbuf_p = NULL;
@@ -1581,13 +1585,13 @@ rayplus_s *extract_rayplus(IRISbuf **IRISbuf_pp,
             if( (ray_bytes_filled + 2) > MAX_RAY_BODY_SIZE ) {
                /* writing 2 more bytes of data would overflow the ray body */
                /* so there must be a problem, tell user */
-               fprintf( stderr, "Potential output ray overflow.\n");
-               fprintf( stderr, "lowBits = %i; lastLowBits = %i;"
+               Iris_printf("Potential output ray overflow.\n");
+               Iris_printf("lowBits = %i; lastLowBits = %i;"
                   "codeWord = %i; lastCodeWord = %i; \n",
                   lowBits,lastLowBits,codeWord, lastCodeWord);
-               fprintf( stderr, "ray_bytes_filled = %i, current_offset = %u;\n",
+               Iris_printf("ray_bytes_filled = %i, current_offset = %u;\n",
                         ray_bytes_filled, current_offset);
-               fprintf( stderr, "Abandoning ray, will attempt to continue.\n");
+               Iris_printf("Abandoning ray, will attempt to continue.\n");
                out->ray->ray_body_size_in_bytes = ray_bytes_filled;
                out->updated_offset = current_offset;
                out->ray->abandon_ray = 1;
@@ -1637,7 +1641,7 @@ phd_s *extract_product_hdr(IRISbuf *IRISbuf_p,
   phd_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'phd_s' structure in"
           " function 'extract_product_hdr'.\n");
       return NULL;
@@ -1684,7 +1688,7 @@ shd_s *extract_structure_header(UINT1 *s1, _Bool target_is_big_endian) {
   shd_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'shd_s' structure in"
           " function 'extract_structure_header'.\n");
       return NULL;
@@ -1730,7 +1734,7 @@ pcf_s *extract_product_configuration(UINT1 *s1,
   pcf_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'pcf_s' structure in"
           " function 'extract_product_configuration'.\n");
       return NULL;
@@ -2068,7 +2072,7 @@ ped_s *extract_product_end(UINT1 *s1,
   ped_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'ped_s' structure in"
           " function 'extract_product_end'.\n");
       return NULL;
@@ -2313,7 +2317,7 @@ ihd_s *extract_ingest_header(IRISbuf *IRISbuf_p,
   ihd_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if ( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'ihd_s' structure in"
           " function 'extract_ingest_header'.\n");
       return NULL;
@@ -2365,7 +2369,7 @@ icf_s *extract_ingest_configuration(UINT1 *s1,
   icf_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'icf_s' structure in"
           " function 'extract_ingest_configuration'.\n");
       return NULL;
@@ -2524,7 +2528,7 @@ tcf_s *extract_task_configuration(UINT1 *s0,
   tcf_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tcf_s' structure in"
           " function 'extract_task_configuration'.\n");
       return NULL;
@@ -2608,7 +2612,7 @@ gpa_s *extract_gparm(UINT1 *s0,
   gpa_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'gpa_s' structure in"
           " function 'extract_gparm'.\n");
       return NULL;
@@ -2769,7 +2773,7 @@ tscani_s *extract_task_scan_info(UINT1 *s1,
   tscani_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tscani_s' structure in"
           " function 'extract_task_scan_info'.\n");
       return NULL;
@@ -2861,7 +2865,7 @@ tschedi_s *extract_task_sched_info(UINT1 *s1,
   tschedi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tschedi_s' structure in"
           " function 'extract_task_sched_info'.\n");
       return NULL;
@@ -2919,7 +2923,7 @@ tdi_s *extract_task_dsp_info(UINT1 *s1,
   tdi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tdi_s' structure in"
           " function 'extract_task_dsp_info'.\n");
       return NULL;
@@ -3021,7 +3025,7 @@ tci_s *extract_task_calib_info(UINT1 *s1,
   tci_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tci_s' structure in"
           " function 'extract_task_calib_info'.\n");
       return NULL;
@@ -3174,7 +3178,7 @@ tmi_s *extract_task_misc_info(UINT1 *s1,
   tmi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tmi_s' structure in"
           " function 'extract_task_misc_info'.\n");
       return NULL;
@@ -3239,7 +3243,7 @@ tri_s *extract_task_range_info(UINT1 *s1,
   tri_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tri_s' structure in"
           " function 'extract_task_range_info'.\n");
       return NULL;
@@ -3306,7 +3310,7 @@ tei_s *extract_task_end_info(UINT1 *s1,
   tei_s *out = NULL;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tei_s' structure in"
           " function 'extract_task_end_info'.\n");
       return NULL;
@@ -3359,7 +3363,7 @@ tpsi_s *extract_task_ppi_scan_info(UINT1 *s1,
   tpsi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tcpsi_s' structure in"
           " function 'extract_task_ppi_scan_info'.\n");
       return NULL;
@@ -3404,7 +3408,7 @@ trsi_s *extract_task_rhi_scan_info(UINT1 *s1,
   trsi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'trsi_s' structure in"
           " function 'extract_task_rhi_scan_info'.\n");
       return NULL;
@@ -3450,7 +3454,7 @@ tmsi_s *extract_task_manual_scan_info(UINT1 *s1,
   tmsi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tmsi_s' structure in"
           " function 'extract_task_manual_scan_info'.\n");
       return NULL;
@@ -3489,7 +3493,7 @@ tfsi_s *extract_task_file_scan_info(UINT1 *s1,
   tfsi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tfsi_s' structure in"
           " function 'extract_task_file_scan_info'.\n");
       return NULL;
@@ -3526,7 +3530,7 @@ tesi_s *extract_task_exec_scan_info(UINT1 *s1) {
   tesi_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tesi_s' structure in"
           " function 'extract_task_exec_scan_info'.\n");
       return NULL;
@@ -3556,7 +3560,7 @@ dsp_data_mask *extract_dsp_data_mask(UINT1 *s1,
   dsp_data_mask *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'dsp_data_mask' structure in"
           " function 'extract_dsp_data_mask'.\n");
       return NULL;
@@ -3599,7 +3603,7 @@ IRISbuf *getabuf(FILE *fp, UINT2 bytes2Copy ) {
    IRISbuf *out;
    out = RAVE_MALLOC( sizeof *out );
    if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'IRISbuf' structure in"
           " function 'getabuf'.\n");
       return NULL;
@@ -3618,7 +3622,7 @@ IRISbuf *getabuf(FILE *fp, UINT2 bytes2Copy ) {
          }
          if( ferror(fp) ) {
             /* tell the client that there was an error reading before eof */
-            fprintf( stderr, "Error while reading input file.\n");
+            Iris_printf("Error while reading input file.\n");
             out->errorInd = 1;
             return out;
          }
@@ -3648,7 +3652,7 @@ ymd_s *extract_ymds_time(UINT1 *s1,
   ymd_s *out = NULL;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'ymd' structure in"
           " function 'extract_ymds_time'.\n");
       return NULL;
@@ -3715,7 +3719,7 @@ ecv_s *extract_enum_convert(UINT1 *s1) {
   ecv_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'ecv_s' structure in"
           " function 'extract_enum_convert'.\n");
       return NULL;
@@ -3742,7 +3746,7 @@ rhd_s *extract_ray_header(UINT1 *ptr_s0) {
   rhd_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-    fprintf(stderr,
+    Iris_printf(
             "Error! Unable to allocate 'rhd_s' structure in"
             " function 'extract_ray_header'.\n");
     return NULL;
@@ -3776,7 +3780,7 @@ ppi_psi_struct *extract_psi_ppi(UINT1 *s1,
   ppi_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'ppi_psi_struct' structure in"
           " function 'extract_psi_ppi'.\n");
       return NULL;
@@ -3817,7 +3821,7 @@ rhi_psi_struct *extract_psi_rhi(UINT1 *s1,
   rhi_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'rhi_psi_struct' structure in"
           " function 'extract_psi_rhi'.\n");
       return NULL;
@@ -3850,7 +3854,7 @@ cappi_psi_struct *extract_psi_cappi(UINT1 *s1,
   cappi_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'cappi_psi_struct' structure in"
           " function 'extract_psi_cappi'.\n");
       return NULL;
@@ -3895,7 +3899,7 @@ cross_psi_struct *extract_psi_cross(UINT1 *s1,
   cross_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'cross_psi_struct' structure in"
           " function 'extract_psi_cross'.\n");
       return NULL;
@@ -3942,7 +3946,7 @@ top_psi_struct *extract_psi_tops(UINT1 *s1,
   top_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'top_psi_struct' structure in"
           " function 'extract_psi_tops'.\n");
       return NULL;
@@ -3978,7 +3982,7 @@ track_psi_struct *extract_psi_track(UINT1 *s1,
   track_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'track_psi_struct' structure in"
           " function 'extract_psi_track'.\n");
       return NULL;
@@ -4044,7 +4048,7 @@ rain_psi_struct *extract_psi_rain(UINT1 *s1,
   rain_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'rain_psi_struct' structure in"
           " function 'extract_psi_rain'.\n");
       return NULL;
@@ -4093,7 +4097,7 @@ vvp_psi_struct *extract_psi_vvp(UINT1 *s1,
   vvp_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'vvp_psi_struct' structure in"
           " function 'extract_psi_vvp'.\n");
       return NULL;
@@ -4169,7 +4173,7 @@ vil_psi_struct *extract_psi_vil(UINT1 *s1,
   vil_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'vil_psi_struct' structure in"
           " function 'extract_psi_vil'.\n");
       return NULL;
@@ -4208,7 +4212,7 @@ shear_psi_struct *extract_psi_shear(UINT1 *s1,
   shear_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'shear_psi_struct' structure in"
           " function 'extract_psi_shear'.\n");
       return NULL;
@@ -4252,7 +4256,7 @@ warn_psi_struct *extract_psi_warn(UINT1 *s1,
   warn_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'warn_psi_struct' structure in"
           " function 'extract_psi_warn'.\n");
       return NULL;
@@ -4313,7 +4317,7 @@ catch_psi_struct *extract_psi_catch(UINT1 *s1,
   catch_psi_struct *out;
   out = RAVE_MALLOC(sizeof *out);
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'catch_psi_struct' structure in"
           " function 'extract_psi_catch'.\n");
       return NULL;
@@ -4366,7 +4370,7 @@ rti_psi_struct *extract_psi_rti(UINT1 *s1,
   rti_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'rti_psi_struct' structure in"
           " function 'extract_psi_rti'.\n");
       return NULL;
@@ -4412,7 +4416,7 @@ raw_psi_struct *extract_psi_raw(UINT1 *s1,
   raw_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'raw_psi_struct' structure in"
           " function 'extract_psi_raw'.\n");
       return NULL;
@@ -4470,7 +4474,7 @@ maximum_psi_struct *extract_psi_max(UINT1 *s1,
   maximum_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'maximum_psi_struct' structure in"
           " function 'extract_psi_max'.\n");
       return NULL;
@@ -4520,7 +4524,7 @@ sline_psi_struct *extract_psi_sline(UINT1 *s1,
   sline_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'sline_psi_struct' structure in"
           " function 'extract_psi_sline'.\n");
       return NULL;
@@ -4593,7 +4597,7 @@ wind_psi_struct *extract_psi_wind(UINT1 *s1,
   wind_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out);
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'wind_psi_struct' structure in"
           " function 'extract_psi_wind'.\n");
       return NULL;
@@ -4659,7 +4663,7 @@ beam_psi_struct *extract_psi_beam(UINT1 *s1,
   beam_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'beam_psi_struct' structure in"
           " function 'extract_psi_beam'.\n");
       return NULL;
@@ -4718,7 +4722,7 @@ fcast_psi_struct *extract_psi_fcast(UINT1 *s1,
   fcast_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'fcast_psi_struct' structure in"
           " function 'extract_psi_fcast'.\n");
       return NULL;
@@ -4779,7 +4783,7 @@ tdwr_psi_struct *extract_psi_tdwr(UINT1 *s1,
   tdwr_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'tdwr_psi_struct' structure in"
           " function 'extract_psi_tdwr'.\n");
       return NULL;
@@ -4831,7 +4835,7 @@ user_psi_struct *extract_psi_user(UINT1 *s1,
   user_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'user_psi_struct' structure in"
           " function 'extract_psi_user'.\n");
       return NULL;
@@ -4866,7 +4870,7 @@ sri_psi_struct *extract_psi_sri(UINT1 *s1,
   sri_psi_struct *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'sri_psi_struct' structure in"
           " function 'extract_psi_sri'.\n");
       return NULL;
@@ -4943,7 +4947,7 @@ rpb_s *extract_raw_prod_bhdr(IRISbuf *IRISbuf_p,
   rpb_s *out= NULL;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-    fprintf(stderr,
+    Iris_printf(
             "Error! Unable to allocate 'rpb_s' structure in"
             " function 'extract_raw_product_bhdr'.\n");
     return NULL;
@@ -5013,7 +5017,7 @@ idh_s *extract_ingest_data_header(IRISbuf *IRISbuf_p,
   idh_s *out = NULL;
   out = RAVE_MALLOC( sizeof *out );
   if ( !out ) {
-      fprintf(stderr,
+      Iris_printf(
           "Error! Unable to allocate 'idh_s' structure in"
           " function 'extract_ingest_data_header'.\n");
       return NULL;
@@ -5078,7 +5082,7 @@ csd_s *extract_color_scale_def(UINT1 *s1, _Bool target_is_big_endian) {
   csd_s *out;
   out = RAVE_MALLOC( sizeof *out );
   if( !out ) {
-    fprintf(stderr,
+    Iris_printf(
             "Error! Unable to allocate 'csd' structure in"
             " function 'extract_color_scale_def'.\n");
     return NULL;
@@ -5521,148 +5525,3 @@ void deep_copy_ingest_header(ihd_s *from, file_element_s **file_element_pp) {
   return;
 }
 
-/*****************************************************************************
- *                                                                            *
- *  -------------------------- free_product_header -------------------------  *
- *                                                                            *
- *****************************************************************************/
-/* A function to free memory allocated for a product header structure (which
- * is a structure of structures, of structures (etc).
- * Only 1 argument is expected, which is a pointer to a product_header 
- * structure.
- * This function returns nothing. The pointer is returned pointing to NULL
- * A product header structure holds:
- *  struct structure_header hdr;          // Generic Header       12 bytes
- *  struct product_configuration pcf;     // Product Config Info 320 bytes
- *  struct product_end end;               // Product End Info    308 bytes
- * 
- * ======================================================================== */  
-void free_product_header(phd_s *phd_p) {
-   struct structure_header *hdr_p = &phd_p->hdr;
-   RAVE_FREE(hdr_p);
-   /* dependence here because it's a union of structures */
-   ppi_psi_struct *ppi_p = NULL;
-   rhi_psi_struct *rhi_p = NULL;
-   cappi_psi_struct *cappi_p = NULL;
-   cross_psi_struct *cross_p = NULL;
-   top_psi_struct *top_p = NULL;
-   track_psi_struct *track_p = NULL;
-   rain_psi_struct *rain_p = NULL;
-   vvp_psi_struct *vvp_p = NULL;
-   vil_psi_struct *vil_p = NULL;
-   shear_psi_struct *shear_p = NULL;
-   warn_psi_struct *warn_p = NULL;
-   catch_psi_struct *catch_p = NULL;
-   rti_psi_struct *rti_p = NULL;
-   raw_psi_struct *raw_p = NULL;
-   maximum_psi_struct *max_p = NULL;
-   user_psi_struct *user_p = NULL;
-   wind_psi_struct *wind_p = NULL;
-   beam_psi_struct *beam_p = NULL;
-   fcast_psi_struct *fcast_p = NULL;
-   tdwr_psi_struct *tdwr_p = NULL;
-   sri_psi_struct *sri_p = NULL;
-   switch(phd_p->pcf.product_type_code)
-   {
-   case(PPI_type):
-      ppi_p = &phd_p->pcf.product_specific_info.ppi;
-      RAVE_FREE(ppi_p);
-      break;
-   case(RHI_type):
-      rhi_p = &phd_p->pcf.product_specific_info.rhi;
-      RAVE_FREE(rhi_p);
-      break;
-   case(CAPPI_type):
-      cappi_p = &phd_p->pcf.product_specific_info.cappi;
-      RAVE_FREE(cappi_p);
-      break;
-   case(CROSS_type):
-      cross_p = &phd_p->pcf.product_specific_info.cross;
-      RAVE_FREE(cross_p);
-      break;
-   case(TOPS_type):
-      top_p = &phd_p->pcf.product_specific_info.top;
-      RAVE_FREE(top_p);
-     break;
-   case(TRACK_type):
-      track_p = &phd_p->pcf.product_specific_info.track;
-      RAVE_FREE(track_p);
-      break;
-   case(RAIN1_type):
-   case(RAINN_type):
-      rain_p = &phd_p->pcf.product_specific_info.rain;
-      RAVE_FREE(rain_p);
-      break;
-   case(VVP_type):
-      vvp_p = &phd_p->pcf.product_specific_info.vvp;
-      RAVE_FREE(vvp_p);
-      break;
-   case(VIL_type):
-      vil_p = &phd_p->pcf.product_specific_info.vil;
-      RAVE_FREE(vil_p);
-      break;
-   case(SHEAR_type):
-      shear_p = &phd_p->pcf.product_specific_info.shear;
-      RAVE_FREE(shear_p);
-      break;
-   case(WARN_type):
-      warn_p = &phd_p->pcf.product_specific_info.warn;
-      RAVE_FREE(warn_p);
-      break;
-   case(CATCH_type):
-      catch_p = &phd_p->pcf.product_specific_info.catch;
-      RAVE_FREE(catch_p);
-      break;
-   case(RTI_type):
-      rti_p = &phd_p->pcf.product_specific_info.rti;
-      RAVE_FREE(rti_p);
-      break;
-   case(RAW_type):
-      raw_p = &phd_p->pcf.product_specific_info.raw;
-      RAVE_FREE(raw_p);
-      break;
-   case(MAX_type):
-      max_p = &phd_p->pcf.product_specific_info.max;
-      RAVE_FREE(max_p);
-      break;
-   case(USER_type):
-      user_p = &phd_p->pcf.product_specific_info.user;
-      RAVE_FREE(user_p);
-      break;
-   case(WIND_type):
-      wind_p = &phd_p->pcf.product_specific_info.wind;
-      RAVE_FREE(wind_p);
-      break;
-   case(BEAM_type):
-      beam_p = &phd_p->pcf.product_specific_info.beam;
-      RAVE_FREE(beam_p);
-      break;
-   case(FCAST_type):
-      fcast_p = &phd_p->pcf.product_specific_info.fcast;
-      RAVE_FREE(fcast_p);
-      break;
-   case(TDWR_type):
-      tdwr_p = &phd_p->pcf.product_specific_info.tdwr;
-      RAVE_FREE(tdwr_p);
-      break;
-   case(SRI_type):
-      sri_p = &phd_p->pcf.product_specific_info.sri;
-      RAVE_FREE(sri_p);
-      break;
-   }
-   csd_s *colors_p = &phd_p->pcf.colors;
-   RAVE_FREE(colors_p);
-   struct structure_header *pcfhdr_p = &phd_p->pcf.hdr;
-   RAVE_FREE(pcfhdr_p);
-   struct ymds_time *GenTime_p = &phd_p->pcf.product_GenTime_UTC;
-   RAVE_FREE(GenTime_p);
-   struct ymds_time *TZ_p = &phd_p->pcf.IngestFile_input_time_TZ;
-   RAVE_FREE(TZ_p);
-   struct product_configuration *pcf_p = &phd_p->pcf;
-   RAVE_FREE(pcf_p);
-   struct ymds_time *oldest_p = &phd_p->end.time_of_oldest_input_ingest_file;
-   RAVE_FREE(oldest_p);
-   struct product_end *end_p = &phd_p->end;
-   RAVE_FREE(end_p);
-   RAVE_FREE(phd_p);
-}
